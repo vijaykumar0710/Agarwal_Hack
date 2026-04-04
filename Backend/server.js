@@ -7,7 +7,11 @@ const app = express();
 
 // CORS: It allows React frontend (port 5173)
 // to send requests to this Node backend (port 5000) without getting blocked.
-app.use(cors());
+app.use(
+  cors({
+    origin: "https://agarwal-hack.vercel.app/",
+  }),
+);
 
 //Multer: This middleware handles the incoming file from React
 // and temporarily saves it in a folder named "uploads/"
