@@ -3,27 +3,25 @@ const multer = require("multer");
 const cors = require("cors");
 const fs = require("fs");
 const PDFParser = require("pdf2json");
+
 const app = express();
 
-// CORS: It allows React frontend (port 5173)
-// to send requests to this Node backend (port 5000) without getting blocked.
 app.use(
   cors({
-    origin: "https://agarwal-hack.vercel.app/",
+    origin: ["https://agarwal-hack.vercel.app", "http://localhost:5173"], // Local aur Production dono allow karein
+    methods: ["POST", "GET"],
+    credentials: true,
   }),
 );
 
-//Multer: This middleware handles the incoming file from React
-// and temporarily saves it in a folder named "uploads/"
-const upload = multer({ dest: "uploads/" });
+// 2.  UPLOADS FOLDER
+const uploadDir = "uploads/";
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+const upload = multer({ dest: uploadDir });
 
-// ---------------------------------------------------------
-// Helper Utilities for Safe Extraction
-// ---------------------------------------------------------
-
-/**
- * Parses a string value into a standard currency number.
- */
+// --- Helper Utilities ---
 function parseCurrency(val) {
   if (!val) return 0.0;
   const cleaned = val.replace(/[\$\s,]/g, "");
@@ -36,7 +34,6 @@ function getLastCurrencyInBlock(text, startStr, endStr) {
   if (start === -1) return 0;
   const end = endStr ? text.indexOf(endStr, start) : start + 150;
   const block = text.substring(start, end !== -1 ? end : start + 150);
-
   const matches = [...block.matchAll(/\$([\d,.]+)/g)];
   if (matches.length > 0) {
     return parseCurrency(matches[matches.length - 1][1]);
@@ -44,20 +41,14 @@ function getLastCurrencyInBlock(text, startStr, endStr) {
   return 0;
 }
 
-// ---------------------------------------------------------
-// Primary API Endpoint: POST /api/parse-cd
-// ---------------------------------------------------------
-
+// --- API Endpoint ---
 app.post("/api/parse-cd", upload.single("cdDocument"), (req, res) => {
-  // 1. Validate that a file was actually uploaded
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded by the client." });
   }
 
-  // 2. Initialize the PDF2JSON Parser (Mode 1 = Raw Text Extraction)
   const pdfParser = new PDFParser(this, 1);
 
-  // Error Handler
   pdfParser.on("pdfParser_dataError", (errData) => {
     console.error("PDF Parsing Error:", errData.parserError);
     if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
@@ -66,16 +57,9 @@ app.post("/api/parse-cd", upload.single("cdDocument"), (req, res) => {
       .json({ error: "Failed to parse the uploaded PDF document." });
   });
 
-  // Success Handler: PDF is parsed into text
   pdfParser.on("pdfParser_dataReady", (pdfData) => {
     const rawText = pdfParser.getRawTextContent();
-
     try {
-      // ---------------------------------------------------------
-      // EXTRACTION PHASE
-      // ---------------------------------------------------------
-
-      // Part 1: Cost Extractions
       const sectionAMatch = rawText.match(
         /A\.\s*Origination Charges[^\$]*?\$([\d,.]+)/,
       );
@@ -91,15 +75,12 @@ app.post("/api/parse-cd", upload.single("cdDocument"), (req, res) => {
       const lenderCreditMatch = rawText.match(
         /Lender Credits[^\$]*?(-\$[\d,.]+)/,
       );
-
-      // Part 2: Payoff Extractions
       const loanAmountMatch = rawText.match(/Loan Amount[^\$]*?\$([\d,.]+)/);
       const cashToCloseMatch = rawText.match(/Cash to Close[^\$]*?\$([\d,.]+)/);
       const principalReductionMatch = rawText.match(
         /Principal Reduction to Consumer[^\$]*?\$([\d,.]+)/,
       );
 
-      // Dynamically sum all "Payoff to..." line items
       let totalPayoffAmount = 0;
       const payoffRegex = /Payoff to[^\$]*?\$([\d,.]+)/g;
       let match;
@@ -107,11 +88,9 @@ app.post("/api/parse-cd", upload.single("cdDocument"), (req, res) => {
         totalPayoffAmount += parseCurrency(match[1]);
       }
 
-      // Part 2: Smart Escrow Extractions (Isolating sections F & G)
       const sectionFIndex = rawText.indexOf("F. Prepaids");
       const sectionFText =
         sectionFIndex !== -1 ? rawText.substring(sectionFIndex) : rawText;
-
       const sectionGIndex = rawText.indexOf(
         "G. Initial Escrow Payment at Closing",
       );
@@ -137,30 +116,19 @@ app.post("/api/parse-cd", upload.single("cdDocument"), (req, res) => {
         /08 Aggregate Adjustment[^\$]*?(-\$[\d,.]+)/,
       );
 
-      // ---------------------------------------------------------
-      // ASSIGNMENT & CLEANING PHASE
-      // ---------------------------------------------------------
       const sectionA = parseCurrency(sectionAMatch?.[1]);
       const sectionB = parseCurrency(sectionBMatch?.[1]);
       const sectionC = parseCurrency(sectionCMatch?.[1]);
       const sectionE = parseCurrency(sectionEMatch?.[1]);
       const lenderCredits = parseCurrency(lenderCreditMatch?.[1]);
-
       const loanAmount = parseCurrency(loanAmountMatch?.[1]);
       const cashToClose = parseCurrency(cashToCloseMatch?.[1]);
       const principalReduction = parseCurrency(principalReductionMatch?.[1]);
       const escAggrAdj = parseCurrency(aggregateAdjustmentMatch?.[1]);
 
-      // ---------------------------------------------------------
-      // BUSINESS LOGIC & MATH PHASE
-      // ---------------------------------------------------------
-
-      // Compute Part 1 (Costs)
       const sectionDSum = sectionA + sectionB + sectionC;
       const totalCostOfLoan = sectionDSum + sectionE;
       const benefitsCost = totalCostOfLoan + lenderCredits;
-
-      // Compute Part 2 (Escrows & Payoff)
       const excessOverPayoff =
         totalPayoffAmount + principalReduction - loanAmount;
       const escrowsSectionG = escHomeIns + escPropTax + escAggrAdj;
@@ -168,11 +136,6 @@ app.post("/api/parse-cd", upload.single("cdDocument"), (req, res) => {
       const escrowsPrepaidExcess = escrowsPlusPrepaid + excessOverPayoff;
       const benefitsEscrow = escrowsPrepaidExcess - cashToClose;
 
-      // ---------------------------------------------------------
-      // RESPONSE PHASE: Send Data to React
-      // ---------------------------------------------------------
-
-      // Structure the final result as a clean JSON object
       res.json({
         part1: {
           sectionA,
@@ -201,19 +164,16 @@ app.post("/api/parse-cd", upload.single("cdDocument"), (req, res) => {
         },
       });
     } catch (error) {
-      console.error("Calculation Error:", error);
       res.status(500).json({ error: "Failed to process business logic." });
     } finally {
-      // Clean up: Delete the temporary PDF file to save server space
-      if (fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path);
-      }
+      if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     }
   });
 
-  // 3. Trigger the parser to start reading the uploaded file
   pdfParser.loadPDF(req.file.path);
 });
 
-const PORT = 5000;
-app.listen(PORT);
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});

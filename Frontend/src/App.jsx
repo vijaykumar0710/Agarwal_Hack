@@ -164,6 +164,7 @@ function App() {
               </div>
             </div>
 
+            {/* ---------------- PART 2 TABLE ---------------- */}
             <div className="result-card">
               <div className="card-header">
                 <h2>Part 2 — Savings Depicted by Escrows & Payoff</h2>
@@ -222,6 +223,7 @@ function App() {
                   <span>$0.00</span>
                 </div>
 
+                {/* ⭐️ AGGREGATE ADJUSTMENT WITH MINUS SIGN AND RED COLOR */}
                 <div className="data-row indented negative">
                   <span>Aggregate Adjustment</span>
                   <span>{formatCurrency(results.part2.escAggrAdj, true)}</span>
@@ -253,6 +255,7 @@ function App() {
 
                 <div className="data-row grand-total">
                   <span>Benefits</span>
+                  {/* Part 2 ka benefit normally positive hai, toh normally print hoga */}
                   <span
                     style={{
                       color:
