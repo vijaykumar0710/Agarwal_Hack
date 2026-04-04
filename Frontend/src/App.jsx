@@ -50,7 +50,7 @@ function App() {
 
     try {
       const response = await axios.post(
-        "https://agarwal-hack1.onrender.com",
+        "https://agarwal-hack1.onrender.com/api/parse-cd",
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
