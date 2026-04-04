@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Production builds
+dist/
+
+# Temporary upload files
+Backend/uploads/*
+!Backend/uploads/.gitkeep
+
+# Environment variables
+.env
+
+# System files
+.DS_Store
